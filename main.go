@@ -3,9 +3,11 @@ package main
 import (
 	"fmt"
 	"log"
+	"net/http"
 	"net/mail"
 
 	"github.com/gosimple/slug"
+	"github.com/labstack/echo/v5"
 
 	"github.com/pocketbase/dbx"
 	"github.com/pocketbase/pocketbase"
@@ -15,6 +17,22 @@ import (
 
 func main() {
 	app := pocketbase.New()
+
+	app.OnBeforeServe().Add(func(e *core.ServeEvent) error {
+		e.Router.POST("/api/posts/:id/view-counts", func(c echo.Context) error {
+			record, err := e.App.Dao().FindRecordById("posts", c.PathParam("id"))
+			if err != nil {
+				return c.String(http.StatusNotFound, "Record not found")
+			}
+			log.Print(record)
+			record.Set("viewCounts", record.GetInt("viewCounts")+1)
+			if err := e.App.Dao().SaveRecord(record); err != nil {
+				return err
+			}
+			return c.NoContent(http.StatusNoContent)
+		})
+		return nil
+	})
 
 	app.OnRecordAfterCreateRequest("posts").Add(func(e *core.RecordCreateEvent) error {
 		subscriptions, err := app.Dao().FindRecordsByExpr("subscriptions", dbx.HashExp{"unsubscribed": false})
@@ -46,14 +64,6 @@ func main() {
 		}
 
 		return err
-	})
-
-	app.OnRecordViewRequest("posts").Add(func(e *core.RecordViewEvent) error {
-		e.Record.Set("viewCounts", e.Record.GetInt("viewCounts")+1)
-		if err := app.Dao().SaveRecord(e.Record); err != nil {
-			return err
-		}
-		return nil
 	})
 
 	if err := app.Start(); err != nil {
