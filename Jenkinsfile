@@ -19,7 +19,7 @@ pipeline {
         }
         stage('Build') {
             steps {
-                sh 'CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o ./pocketbase'
+                sh 'CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -buildvcs=false -o ./pocketbase'
             }
         }
         stage('Copy artifacts to VPS') {
