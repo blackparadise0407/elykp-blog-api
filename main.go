@@ -10,11 +10,36 @@ import (
 	"github.com/pocketbase/dbx"
 	"github.com/pocketbase/pocketbase"
 	"github.com/pocketbase/pocketbase/core"
+	"github.com/pocketbase/pocketbase/models"
 	"github.com/pocketbase/pocketbase/tools/mailer"
+
+	"elykp.com/server/pkg/session"
+	_ "elykp.com/server/pkg/session/providers/memory"
 )
+
+func setViewCount(app *pocketbase.PocketBase, r *models.Record) error {
+	currViewCounts, ok := r.Get("viewCounts").(int)
+	if ok {
+		r.Set("viewCounts", currViewCounts+1)
+	} else {
+		r.Set("viewCounts", 1)
+	}
+	if err := app.Dao().SaveRecord(r); err != nil {
+		return err
+	}
+	return nil
+}
 
 func main() {
 	app := pocketbase.New()
+	var globalSessions *session.Manager
+
+	if sessions, err := session.NewManager("memory", "session", 3600); err != nil {
+		log.Fatal(err.Error())
+	} else {
+		globalSessions = sessions
+	}
+	go globalSessions.GC()
 
 	app.OnRecordAfterCreateRequest("posts").Add(func(e *core.RecordCreateEvent) error {
 		subscriptions, err := app.Dao().FindRecordsByExpr("subscriptions", dbx.HashExp{"unsubscribed": false})
@@ -46,6 +71,28 @@ func main() {
 		}
 
 		return err
+	})
+
+	app.OnRecordViewRequest("posts").Add(func(e *core.RecordViewEvent) error {
+		ip := e.HttpContext.RealIP()
+		currRecordId := e.Record.Id
+		sess := globalSessions.SessionStart(e.HttpContext.Response(), e.HttpContext.Request())
+		ids, ok := sess.Get(ip).([]string)
+		if ok {
+			for _, id := range ids {
+				if id == currRecordId {
+					break
+				} else {
+					sess.Set(ip, append(ids, currRecordId))
+					setViewCount(app, e.Record)
+				}
+			}
+		} else {
+			sess.Set(ip, []string{currRecordId})
+			setViewCount(app, e.Record)
+		}
+
+		return nil
 	})
 
 	if err := app.Start(); err != nil {

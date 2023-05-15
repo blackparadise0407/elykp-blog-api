@@ -14,12 +14,12 @@ pipeline {
         }
         stage('Install dependencies') {
             steps {
-                sh 'go mod download'
+                sh 'go mod download && go mod verify'
             }
         }
         stage('Build') {
             steps {
-                sh 'CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o ./pocketbase pkg/main.go'
+                sh 'CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o ./pocketbase .'
             }
         }
         stage('Copy artifacts to VPS') {
@@ -33,8 +33,7 @@ pipeline {
                             transfers: [sshTransfer(
                                 sourceFiles: 'pocketbase', 
                                 remoteDirectory: "elykp-api", 
-                                cleanRemote: true, 
-                                execCommand: "~/elykp-api/pocketbase serve"
+                                cleanRemote: false, 
                                 )
                             ],
                             verbose: true,
