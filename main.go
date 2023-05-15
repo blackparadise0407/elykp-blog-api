@@ -24,7 +24,6 @@ func main() {
 			if err != nil {
 				return c.String(http.StatusNotFound, "Record not found")
 			}
-			log.Print(record)
 			record.Set("viewCounts", record.GetInt("viewCounts")+1)
 			if err := e.App.Dao().SaveRecord(record); err != nil {
 				return err
@@ -44,21 +43,24 @@ func main() {
 				return err
 			}
 
-			for _, subscription := range subscriptions {
-				message := &mailer.Message{
-					From: mail.Address{
-						Address: app.Settings().Meta.SenderAddress,
-						Name:    app.Settings().Meta.SenderName,
-					},
-					To:      []mail.Address{{Address: subscription.Email()}},
-					Subject: "New post published",
-					HTML: fmt.Sprintf(`
-					Checkout our latest post on <a href="https://elykp.com/%s">Elykp.com</a>
-					`, postSlug),
-				}
+			go func() {
+				for _, subscription := range subscriptions {
+					message := &mailer.Message{
+						From: mail.Address{
+							Address: app.Settings().Meta.SenderAddress,
+							Name:    app.Settings().Meta.SenderName,
+						},
+						To:      []mail.Address{{Address: subscription.Email()}},
+						Subject: "New post published",
+						HTML: fmt.Sprintf(`
+						Checkout our latest post on <a href="https://elykp.com/%s">Elykp.com</a>
+						`, postSlug),
+					}
 
-				app.NewMailClient().Send(message)
-			}
+					app.NewMailClient().Send(message)
+				}
+			}()
+
 		} else {
 			return nil
 		}
