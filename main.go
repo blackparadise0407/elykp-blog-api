@@ -74,7 +74,10 @@ func main() {
 	})
 
 	app.OnRecordViewRequest("posts").Add(func(e *core.RecordViewEvent) error {
-		ip := e.HttpContext.RealIP()
+		var ip string
+		if ip = e.HttpContext.Request().Header.Get("X-Forwarded-For"); ip == "" {
+			ip = e.HttpContext.Request().RemoteAddr
+		}
 		currRecordId := e.Record.Id
 		sess := globalSessions.SessionStart(e.HttpContext.Response(), e.HttpContext.Request())
 		ids, ok := sess.Get(ip).([]string)
