@@ -5,31 +5,49 @@ import (
 	"log"
 	"net/http"
 	"net/mail"
+	"time"
 
+	"elykp.com/server/cache"
 	"github.com/gosimple/slug"
 	"github.com/labstack/echo/v5"
-
 	"github.com/pocketbase/dbx"
 	"github.com/pocketbase/pocketbase"
 	"github.com/pocketbase/pocketbase/core"
 	"github.com/pocketbase/pocketbase/tools/mailer"
 )
 
+func getIp(c echo.Context) string {
+	if ip := c.Request().Header.Get("X-Forwarded-For"); ip != "" {
+		return ip
+	}
+	return c.RealIP()
+}
+
 func main() {
 	app := pocketbase.New()
 
+	cacheMgr := cache.NewLocalCache(time.Second)
+
 	app.OnBeforeServe().Add(func(e *core.ServeEvent) error {
 		e.Router.POST("/api/posts/:id/view-counts", func(c echo.Context) error {
-			record, err := e.App.Dao().FindRecordById("posts", c.PathParam("id"))
+			currPostId := c.PathParam("id")
+			record, err := e.App.Dao().FindRecordById("posts", currPostId)
 			if err != nil {
 				return c.String(http.StatusNotFound, "Record not found")
 			}
-			record.Set("viewCounts", record.GetInt("viewCounts")+1)
-			if err := e.App.Dao().SaveRecord(record); err != nil {
-				return err
+			ip := getIp(c)
+			cacheKey := fmt.Sprintf("view-counts:%v-%v", ip, currPostId)
+			if _, err := cacheMgr.Get(cacheKey); err != nil {
+				cacheMgr.Set(cacheKey, 1, time.Now().Add(time.Hour*2).Unix())
+				record.Set("viewCounts", record.GetInt("viewCounts")+1)
+				if err := e.App.Dao().SaveRecord(record); err != nil {
+					return c.String(http.StatusBadRequest, err.Error())
+				}
 			}
+
 			return c.NoContent(http.StatusNoContent)
 		})
+
 		return nil
 	})
 
@@ -69,6 +87,7 @@ func main() {
 	})
 
 	if err := app.Start(); err != nil {
+		cacheMgr.StopCleanup()
 		log.Fatal(err)
 	}
 
